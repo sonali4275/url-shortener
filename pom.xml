@@ -43,8 +43,8 @@
         <!-- H2 in-memory DB: zero setup needed to run locally.
              We will swap this for PostgreSQL in a later step. -->
         <dependency>
-            <groupId>com.h2database</groupId>
-            <artifactId>h2</artifactId>
+            <groupId>org.postgresql</groupId>
+            <artifactId>postgresql</artifactId>
             <scope>runtime</scope>
         </dependency>
 
