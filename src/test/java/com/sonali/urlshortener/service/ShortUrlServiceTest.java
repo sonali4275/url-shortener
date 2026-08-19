@@ -7,7 +7,6 @@ import com.sonali.urlshortener.repository.ShortUrlRepository;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
-import org.mockito.ArgumentCaptor;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 
@@ -26,11 +25,14 @@ class ShortUrlServiceTest {
     @Mock
     private ClickEventRepository clickEventRepository;
 
+    @Mock
+    private ShortUrlCacheService shortUrlCacheService;
+
     private ShortUrlService service;
 
     @BeforeEach
     void setUp() {
-        service = new ShortUrlService(shortUrlRepository, clickEventRepository);
+        service = new ShortUrlService(shortUrlRepository, clickEventRepository, shortUrlCacheService);
     }
 
     @Test
@@ -48,7 +50,6 @@ class ShortUrlServiceTest {
 
     @Test
     void createShortUrl_retriesOnCollision() {
-        // First generated code collides, second does not
         when(shortUrlRepository.existsByShortCode(any()))
                 .thenReturn(true)
                 .thenReturn(false);
@@ -61,23 +62,18 @@ class ShortUrlServiceTest {
 
     @Test
     void resolveAndRecordClick_incrementsClickCountAndLogsEvent() {
-        ShortUrl existing = new ShortUrl("https://example.com", "abc1234");
-        when(shortUrlRepository.findByShortCode("abc1234")).thenReturn(Optional.of(existing));
-        when(shortUrlRepository.save(any(ShortUrl.class))).thenAnswer(invocation -> invocation.getArgument(0));
+        when(shortUrlCacheService.getOriginalUrl("abc1234")).thenReturn("https://example.com");
 
-        ShortUrl result = service.resolveAndRecordClick("abc1234", "https://google.com");
+        String result = service.resolveAndRecordClick("abc1234", "https://google.com");
 
-        assertEquals(1, result.getClickCount());
-
-        ArgumentCaptor<ShortUrl> captor = ArgumentCaptor.forClass(ShortUrl.class);
-        verify(shortUrlRepository).save(captor.capture());
-        assertEquals(1, captor.getValue().getClickCount());
+        assertEquals("https://example.com", result);
+        verify(shortUrlRepository, times(1)).incrementClickCount("abc1234");
         verify(clickEventRepository, times(1)).save(any());
     }
 
     @Test
     void resolveAndRecordClick_throwsWhenCodeNotFound() {
-        when(shortUrlRepository.findByShortCode("missing")).thenReturn(Optional.empty());
+        when(shortUrlCacheService.getOriginalUrl("missing")).thenThrow(new UrlNotFoundException("missing"));
 
         assertThrows(UrlNotFoundException.class,
                 () -> service.resolveAndRecordClick("missing", null));

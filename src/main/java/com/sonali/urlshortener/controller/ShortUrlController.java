@@ -46,12 +46,12 @@ public class ShortUrlController {
 
     // GET /{code}  -> actual redirect, records a click
     @GetMapping("/{code}")
-    public ResponseEntity<Void> redirect(@PathVariable("code") String code, HttpServletRequest request) {
+   public ResponseEntity<Void> redirect(@PathVariable("code") String code, HttpServletRequest request) {
         String referrer = request.getHeader(HttpHeaders.REFERER);
-        ShortUrl shortUrl = shortUrlService.resolveAndRecordClick(code, referrer);
+        String originalUrl = shortUrlService.resolveAndRecordClick(code, referrer);
 
         return ResponseEntity.status(HttpStatus.FOUND)
-                .location(URI.create(shortUrl.getOriginalUrl()))
+                .location(URI.create(originalUrl))
                 .build();
     }
 

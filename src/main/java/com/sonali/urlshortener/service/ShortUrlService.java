@@ -14,26 +14,22 @@ import java.util.List;
 @Service
 public class ShortUrlService {
 
-    // Base62 alphabet keeps short codes URL-safe with no encoding needed.
     private static final String ALPHABET = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789";
     private static final int CODE_LENGTH = 7;
     private static final SecureRandom RANDOM = new SecureRandom();
 
     private final ShortUrlRepository shortUrlRepository;
     private final ClickEventRepository clickEventRepository;
+    private final ShortUrlCacheService shortUrlCacheService;
 
     public ShortUrlService(ShortUrlRepository shortUrlRepository,
-                            ClickEventRepository clickEventRepository) {
+                            ClickEventRepository clickEventRepository,
+                            ShortUrlCacheService shortUrlCacheService) {
         this.shortUrlRepository = shortUrlRepository;
         this.clickEventRepository = clickEventRepository;
+        this.shortUrlCacheService = shortUrlCacheService;
     }
 
-    /**
-     * Creates a new short URL. Generates a random Base62 code and retries
-     * on the rare collision instead of relying on a sequential counter -
-     * this keeps codes non-guessable and avoids a single point of contention
-     * under concurrent writes.
-     */
     @Transactional
     public ShortUrl createShortUrl(String originalUrl) {
         String code = generateUniqueCode();
@@ -41,22 +37,14 @@ public class ShortUrlService {
         return shortUrlRepository.save(shortUrl);
     }
 
-    /**
-     * Resolves a short code back to the original URL and records a click
-     * event for analytics. Runs in one transaction so the click count and
-     * the click log never drift apart.
-     */
     @Transactional
-    public ShortUrl resolveAndRecordClick(String shortCode, String referrer) {
-        ShortUrl shortUrl = shortUrlRepository.findByShortCode(shortCode)
-                .orElseThrow(() -> new UrlNotFoundException(shortCode));
+    public String resolveAndRecordClick(String shortCode, String referrer) {
+        String originalUrl = shortUrlCacheService.getOriginalUrl(shortCode);
 
-        shortUrl.setClickCount(shortUrl.getClickCount() + 1);
-        shortUrlRepository.save(shortUrl);
-
+        shortUrlRepository.incrementClickCount(shortCode);
         clickEventRepository.save(new ClickEvent(shortCode, referrer));
 
-        return shortUrl;
+        return originalUrl;
     }
 
     @Transactional(readOnly = true)
@@ -67,8 +55,6 @@ public class ShortUrlService {
 
     @Transactional(readOnly = true)
     public List<ClickEvent> getClickHistory(String shortCode) {
-        // Confirms the code exists before returning (possibly empty) history,
-        // so callers get a 404 instead of a silently empty list for typos.
         if (!shortUrlRepository.existsByShortCode(shortCode)) {
             throw new UrlNotFoundException(shortCode);
         }
