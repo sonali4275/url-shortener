@@ -1,5 +1,16 @@
 # URL Shortener with Click Analytics
 
+**Live demo:** https://url-shortener-production-9313.up.railway.app
+(Hosted on Railway's free tier — the first request after a period of inactivity may take a
+few seconds to spin up.)
+
+Try it:
+```bash
+curl -X POST https://url-shortener-production-9313.up.railway.app/api/urls \
+  -H "Content-Type: application/json" \
+  -d '{"originalUrl": "https://github.com"}'
+```
+
 A backend service that shortens URLs and tracks click analytics (count, timestamp, referrer),
 built with Java and Spring Boot. Fully containerized with Docker — app, PostgreSQL, and Redis
 all run together via a single `docker compose up`.
@@ -9,19 +20,17 @@ all run together via a single `docker compose up`.
 Most URL-shortener tutorials stop at "generate a code, save it, redirect." This one goes a step
 further by logging every click as its own event, so it can answer real analytics questions
 (when was this clicked, how many times, from where) — the kind of design decision that comes
-up in actual system design interviews. It also layers in caching, containerization, CI, and
-rate limiting, so the end-to-end story covers persistence, performance, reproducible deployment,
-and abuse protection.
+up in actual system design interviews. It also layers in caching and containerization, so the
+end-to-end story covers persistence, performance, and reproducible deployment.
 
 ## Tech stack
 
 - **Java 17 / Spring Boot 3** — REST API
 - **Spring Data JPA** — persistence layer
 - **PostgreSQL** — persistent relational database
-- **Redis** — caching layer for short-code lookups, and backing store for rate limiting
+- **Redis** — caching layer for short-code lookups
 - **H2 (in-memory)** — used only for fast unit tests, not for running the app
 - **Docker / Docker Compose** — containerized app + Postgres + Redis, one-command startup
-- **GitHub Actions** — runs the test suite on every push and pull request to `main`
 - **JUnit 5 + Mockito** — unit tests for the service layer
 - **Maven** — build tool
 
@@ -62,6 +71,12 @@ and abuse protection.
   limit get an HTTP `429 Too Many Requests`. Only URL creation is limited — redirects and
   analytics reads stay unrestricted. If Redis is unreachable, the limiter fails open (allows the
   request) rather than blocking traffic because of a caching-layer outage.
+- **The short URL is built from the incoming request, not a hardcoded host.** Using
+  `ServletUriComponentsBuilder.fromCurrentContextPath()` (with
+  `server.forward-headers-strategy=framework` to trust the `X-Forwarded-*` headers a reverse
+  proxy sends) means the returned `shortUrl` is correct whether the app is running on
+  `localhost`, inside Docker, or deployed behind Railway's HTTPS-terminating proxy — no
+  environment-specific hardcoding needed.
 
 ## Running with Docker (recommended)
 
@@ -98,44 +113,3 @@ curl -X POST http://localhost:8080/api/urls \
 
 # Use the returned shortCode to test the redirect
 curl -i http://localhost:8080/<shortCode>
-
-# View click analytics
-curl http://localhost:8080/api/urls/<shortCode>/analytics
-```
-
-`POST /api/urls` is rate-limited per client IP (default: 10 requests per 60 seconds — see
-`rate-limit.max-requests` / `rate-limit.window-seconds` in `application.properties`). Exceeding
-it returns HTTP `429 Too Many Requests`.
-
-## Running locally without Docker
-
-Requires a local PostgreSQL server (database `urlshortener`, user/password `postgres`/`postgres`
-by default — see `src/main/resources/application.properties`) and a local Redis server.
-
-```bash
-mvn spring-boot:run
-```
-
-Hibernate creates the `short_urls` and `click_events` tables automatically on first startup,
-based on the `@Entity` classes.
-
-## Running tests
-
-```bash
-mvn test
-```
-
-Tests use H2 in-memory storage and disable caching, so they don't need Postgres or Redis running.
-
-## Continuous Integration
-
-A GitHub Actions workflow (`.github/workflows/ci.yml`) runs `mvn test` automatically on every
-push and pull request to `main`, using JDK 17 with Maven dependency caching.
-
-## Roadmap
-
-- [x] Swap H2 for PostgreSQL (persistent storage)
-- [x] Add Redis caching for frequently-accessed short codes
-- [x] Containerize with Docker + docker-compose (app + Postgres + Redis)
-- [x] Add a GitHub Actions workflow to run tests on every push
-- [x] Add rate limiting on URL creation
