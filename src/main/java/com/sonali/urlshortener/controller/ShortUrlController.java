@@ -11,6 +11,7 @@ import org.springframework.http.HttpHeaders;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
+import org.springframework.web.servlet.support.ServletUriComponentsBuilder;
 
 import java.net.URI;
 import java.util.List;
@@ -56,7 +57,12 @@ public class ShortUrlController {
     }
 
     private ShortUrlResponse toResponse(ShortUrl shortUrl) {
-        String shortUrlText = "http://localhost:8080/" + shortUrl.getShortCode();
+        // Build the short URL from the actual incoming request (scheme, host, port)
+        // instead of a hardcoded value, so it's correct whether running locally,
+        // in Docker, or behind a reverse proxy like Railway's.
+        String shortUrlText = ServletUriComponentsBuilder.fromCurrentContextPath()
+                .path("/" + shortUrl.getShortCode())
+                .toUriString();
         return new ShortUrlResponse(
                 shortUrl.getShortCode(),
                 shortUrlText,
